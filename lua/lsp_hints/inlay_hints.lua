@@ -1,4 +1,5 @@
 local lsp_hints = require("lsp_hints")
+local plenary_ok, async = pcall(require, "plenary.async")
 local required_lsp_feature = "textDocument/inlayHint"
 
 local M = {}
@@ -151,30 +152,44 @@ end
 function M.cache_render(self, bufnr)
   local buffer = bufnr or vim.api.nvim_get_current_buf()
 
-  for _, v in pairs(vim.lsp.get_active_clients({ bufnr = buffer })) do
-    if v.supports_method(required_lsp_feature) then
-      v.request(
-        required_lsp_feature,
-        get_params(v, buffer),
-        function(err, result, ctx)
-          if err then
-            return
-          end
-
-          if not vim.api.nvim_buf_is_loaded(ctx.bufnr) then
-            self.cache[ctx.bufnr] = nil
-            return
-          end
-
-          local hints, max_line_len = parse_hints(result, ctx.bufnr)
-          self.cache[ctx.bufnr] = { hints = hints, max_line_len = max_line_len }
-
-          M.render(self, ctx.bufnr)
-        end,
-        buffer
-      )
+  for _, client in pairs(vim.lsp.get_active_clients({ bufnr = buffer })) do
+    if plenary_ok then
+      M.async_lsp_request(self, client, buffer)
+    else
+      M.lsp_request(self, client, buffer)
     end
   end
+end
+
+function M.lsp_request(self, client, bufnr)
+  if client.supports_method(required_lsp_feature) then
+    client.request(
+      required_lsp_feature,
+      get_params(client, bufnr),
+      function(err, result, ctx)
+        if err then
+          return
+        end
+
+        if not vim.api.nvim_buf_is_loaded(ctx.bufnr) then
+          self.cache[ctx.bufnr] = nil
+          return
+        end
+
+        local hints, max_line_len = parse_hints(result, ctx.bufnr)
+        self.cache[ctx.bufnr] = { hints = hints, max_line_len = max_line_len }
+
+        M.render(self, ctx.bufnr)
+      end,
+      bufnr
+    )
+  end
+end
+
+function M.async_lsp_request(self, client, bufnr)
+  async.run(function()
+    M.lsp_request(self, client, bufnr)
+  end)
 end
 
 local function parse_hint_label(hint_label)
