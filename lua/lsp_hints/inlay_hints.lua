@@ -1,5 +1,3 @@
-local lsp_hints = require("lsp_hints")
-local plenary_ok, async = pcall(require, "plenary.async")
 local required_lsp_feature = "textDocument/inlayHint"
 
 local M = {}
@@ -52,17 +50,17 @@ function M.unset()
 end
 
 function M.enable_cache_autocmd()
-  local opts = lsp_hints.config.options
+  local opts = require("lsp_hints").config.options
   vim.cmd(
     string.format(
       [[
         augroup InlayHintsCache
-        autocmd BufWritePost,BufReadPost,BufEnter,BufWinEnter,TabEnter,TextChanged,TextChangedI *.rs :lua require'lsp_hints'.cache()
+        autocmd BufWritePost,BufReadPost,BufEnter,BufWinEnter,TabEnter,TextChanged,TextChangedI * :lua require'lsp_hints'.cache()
         %s
         augroup END
       ]],
       opts.only_current_line
-        and "autocmd CursorMoved,CursorMovedI *.rs :lua require'lsp_hints'.render()"
+        and "autocmd CursorMoved,CursorMovedI * :lua require'lsp_hints'.render()"
         or ""
     )
   )
@@ -150,11 +148,14 @@ local function parse_hints(result, bufnr)
 end
 
 function M.cache_render(self, bufnr)
+  local plenary_ok, async = pcall(require, "plenary.async")
   local buffer = bufnr or vim.api.nvim_get_current_buf()
 
   for _, client in pairs(vim.lsp.get_active_clients({ bufnr = buffer })) do
     if plenary_ok then
-      M.async_lsp_request(self, client, buffer)
+      async.run(function()
+        M.lsp_request(self, client, buffer)
+      end)
     else
       M.lsp_request(self, client, buffer)
     end
@@ -186,12 +187,6 @@ function M.lsp_request(self, client, bufnr)
   end
 end
 
-function M.async_lsp_request(self, client, bufnr)
-  async.run(function()
-    M.lsp_request(self, client, bufnr)
-  end)
-end
-
 local function parse_hint_label(hint_label)
   if type(hint_label) == "string" then
     return hint_label
@@ -203,7 +198,7 @@ local function parse_hint_label(hint_label)
 end
 
 local function render_line(line, line_hints, bufnr, max_line_len)
-  local opts = lsp_hints.config.options
+  local opts = require("lsp_hints").config.options
   local virt_text = ""
 
   local param_hints = {}
@@ -272,7 +267,7 @@ local function render_line(line, line_hints, bufnr, max_line_len)
 end
 
 function M.render(self, bufnr)
-  local opts = lsp_hints.config.options
+  local opts = require("lsp_hints").config.options
   local buffer = bufnr or vim.api.nvim_get_current_buf()
 
   local cached = self.cache[buffer]
